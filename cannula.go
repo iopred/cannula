@@ -285,10 +285,15 @@ func (c *Cannula) user(cl *Client, m *irc.Message) {
 }
 
 func (c *Cannula) nick(cl *Client, m *irc.Message) {
+	if cl.Service != nil {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_ERRONEUSNICKNAME, []string{}, "Linked accounts can't change their nick", false}
+		return
+	}
+
 	name := ""
 
 	if len(m.Params) == 0 && m.Trailing == "" {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NONICKNAMEGIVEN, []string{irc.NICK}, "No nickname given", false}
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NONICKNAMEGIVEN, []string{}, "No nickname given", false}
 		return
 	}
 

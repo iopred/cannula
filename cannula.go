@@ -272,7 +272,7 @@ func (c *Cannula) checkAuth(cl *Client) {
 }
 
 func (c *Cannula) pass(cl *Client, m *irc.Message) {
-	if len(m.Params) != 1 {
+	if len(m.Params) == 0 && m.Trailing == "" {
 		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{irc.PASS}, "Not enough parameters", false}
 		return
 	}
@@ -282,7 +282,11 @@ func (c *Cannula) pass(cl *Client, m *irc.Message) {
 		return
 	}
 
-	cl.Pass = m.Params[0]
+	if len(m.Params) == 1 {
+		cl.Pass = m.Params[0]
+	} else {
+		cl.Pass = m.Trailing
+	}
 }
 
 func (c *Cannula) user(cl *Client, m *irc.Message) {

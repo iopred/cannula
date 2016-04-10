@@ -126,7 +126,7 @@ func (c *Cannula) verifyChannelTarget(cl *Client, m *irc.Message, command string
 		return ""
 	}
 
-	if c.channels[target].clients[cl] {
+	if !c.channels[target].clients[cl] {
 		cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
 		return ""
 	}
@@ -169,15 +169,10 @@ func (c *Cannula) quit(cl *Client, m *irc.Message) {
 	delete(c.clients, cl.Prefix)
 	delete(c.names, cl.Prefix.Name)
 
-	for ch := range cl.Channels {
-		delete(c.channels[ch].clients, cl)
-	}
-
 	c.Unlock()
 
 	for ch := range cl.Channels {
-		fmt.Println(ch)
-		c.broadcast(&irc.Message{cl.Prefix, irc.PART, []string{ch}, m.Trailing, m.EmptyTrailing}, nil)
+		c.channels[ch].quit(c, cl, m)
 	}
 
 	cl.in <- &ServerClose{}
@@ -229,7 +224,7 @@ func (c *Cannula) checkAuth(cl *Client) {
 		} else {
 			ytc := res.Items[0]
 
-			old := cl.Prefix
+			old := cl.Prefix.Name
 
 			c.Lock()
 
@@ -247,11 +242,11 @@ func (c *Cannula) checkAuth(cl *Client) {
 
 			c.Unlock()
 
+			cl.in <- &irc.Message{c.prefix, irc.NICK, []string{old}, cl.Prefix.Name, false}
+
 			if firstTime {
 				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, "YouTube account linked!", false}
 			}
-
-			cl.in <- &irc.Message{c.prefix, irc.NICK, []string{old.Name}, cl.Prefix.Name, false}
 		}
 	}
 
@@ -325,13 +320,17 @@ func (c *Cannula) nick(cl *Client, m *irc.Message) {
 	}
 	c.names[name] = cl
 
+	m.Prefix = &irc.Prefix{cl.Prefix.Name, cl.Prefix.User, cl.Prefix.Host}
+
+	for ch := range cl.Channels {
+		c.channels[ch].nick(c, cl, m)
+	}
+
+	cl.Prefix.Name = name
+
 	c.Unlock()
 
-	if cl.Authorized {
-		c.broadcast(&irc.Message{cl.Prefix, irc.NICK, []string{}, name, false}, nil)
-		cl.Prefix.Name = name
-	} else {
-		cl.Prefix.Name = name
+	if !cl.Authorized {
 		c.checkAuth(cl)
 	}
 }

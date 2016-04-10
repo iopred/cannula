@@ -118,6 +118,8 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 
 	ch.Unlock()
 
+	cl.Channels[ch.Name] = true
+
 	ch.broadcast(m, nil)
 
 	if ch.Topic != "" {
@@ -127,14 +129,39 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 }
 
 func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
-	ch.broadcast(m, nil)
-
 	ch.Lock()
 
 	delete(ch.clients, cl)
 	ch.createNames()
 
+	delete(cl.Channels, ch.Name)
+
 	ch.Unlock()
+
+	ch.broadcast(m, nil)
+}
+
+func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {
+	ch.Lock()
+
+	delete(ch.clients, cl)
+	ch.createNames()
+
+	delete(cl.Channels, ch.Name)
+
+	ch.Unlock()
+
+	ch.broadcast(m, nil)
+}
+
+func (ch *Channel) nick(c *Cannula, cl *Client, m *irc.Message) {
+	ch.Lock()
+
+	ch.createNames()
+
+	ch.Unlock()
+
+	ch.broadcast(m, nil)
 }
 
 func (ch *Channel) removeIdle() {

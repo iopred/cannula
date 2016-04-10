@@ -273,11 +273,13 @@ func (c *Cannula) checkAuth(cl *Client) {
 
 func (c *Cannula) pass(cl *Client, m *irc.Message) {
 	if len(m.Params) != 1 {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{irc.USER}, "Not enough parameters", false}
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{irc.PASS}, "Not enough parameters", false}
+		return
 	}
 
 	if cl.Authorized {
 		cl.in <- &irc.Message{c.prefix, irc.ERR_ALREADYREGISTRED, []string{}, "You may not reregister", false}
+		return
 	}
 
 	cl.Pass = m.Params[0]
@@ -286,10 +288,12 @@ func (c *Cannula) pass(cl *Client, m *irc.Message) {
 func (c *Cannula) user(cl *Client, m *irc.Message) {
 	if len(m.Params) != 3 {
 		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{irc.USER}, "Not enough parameters", false}
+		return
 	}
 
 	if cl.Authorized {
 		cl.in <- &irc.Message{c.prefix, irc.ERR_ALREADYREGISTRED, []string{}, "You may not reregister", false}
+		return
 	}
 
 	cl.Prefix.User = m.Params[0]

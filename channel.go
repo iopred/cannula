@@ -58,6 +58,10 @@ func (ch *Channel) init(c *Cannula) {
 }
 
 func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
+	if m == nil || m.AuthorDetails == nil {
+		return
+	}
+
 	ytClient := c.ytClient(m.AuthorDetails.DisplayName, m.AuthorDetails.ChannelId)
 
 	ch.Lock()

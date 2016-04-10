@@ -478,6 +478,7 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 					return
 				}
 			}
+			message = strings.Replace(message, " ", " ", -1)
 
 			c.rateLimit <- func() {
 				res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{

@@ -111,27 +111,42 @@ func (c *Cannula) verifyChannelTarget(cl *Client, m *irc.Message, command string
 		return ""
 	}
 
+	verifiedTargets := []string{}
+
 	target := m.Params[0]
 
-	if strings.Index(target, "#") != 0 {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
-		return ""
+	targets := strings.Split(target, ",")
+
+	for _, target := range targets {
+
+		if !func() bool {
+			if strings.Index(target, "#") != 0 {
+				cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
+				return false
+			}
+
+			c.RLock()
+			defer c.RUnlock()
+
+			if c.channels[target] == nil {
+				cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
+				return false
+			}
+
+			if !c.channels[target].clients[cl] {
+				cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
+				return false
+			}
+
+			return true
+		}() {
+			continue
+		}
+
+		verifiedTargets = append(verifiedTargets, target)
 	}
 
-	c.RLock()
-	defer c.RUnlock()
-
-	if c.channels[target] == nil {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
-		return ""
-	}
-
-	if !c.channels[target].clients[cl] {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
-		return ""
-	}
-
-	return target
+	return strings.Join(verifiedTargets, ",")
 }
 
 func (c *Cannula) verifyTarget(cl *Client, m *irc.Message, command string) string {
@@ -145,22 +160,37 @@ func (c *Cannula) verifyTarget(cl *Client, m *irc.Message, command string) strin
 		return ""
 	}
 
+	verifiedTargets := []string{}
+
 	target := m.Params[0]
 
-	c.RLock()
-	defer c.RUnlock()
+	targets := strings.Split(target, ",")
 
-	if c.names[target] == nil && c.channels[target] == nil {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target}, "No such nick/channel", false}
-		return ""
+	for _, target := range targets {
+
+		if !func() bool {
+			c.RLock()
+			defer c.RUnlock()
+
+			if c.names[target] == nil && c.channels[target] == nil {
+				cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target}, "No such nick/channel", false}
+				return false
+			}
+
+			if strings.Index(target, "#") == 0 && !c.channels[target].clients[cl] {
+				cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
+				return false
+			}
+
+			return true
+		}() {
+			continue
+		}
+
+		verifiedTargets = append(verifiedTargets, target)
 	}
 
-	if strings.Index(target, "#") == 0 && !c.channels[target].clients[cl] {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
-		return ""
-	}
-
-	return target
+	return strings.Join(verifiedTargets, ",")
 }
 
 func (c *Cannula) quit(cl *Client, m *irc.Message) {
@@ -374,47 +404,56 @@ func (c *Cannula) join(cl *Client, m *irc.Message) {
 
 	target := m.Params[0]
 
-	if strings.Index(target, "#") != 0 {
-		cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
-		return
-	}
+	targets := strings.Split(target, ",")
 
-	c.Lock()
-
-	ch := c.channels[target]
-	if ch == nil {
-		ch = &Channel{
-			Name:      target,
-			clients:   make(map[*Client]bool),
-			ytClients: make(map[*YTClient]time.Time),
-			ignore:    make(map[string]bool),
+	for _, target := range targets {
+		if strings.Index(target, "#") != 0 {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
+			return
 		}
-		c.channels[target] = ch
-		go ch.init(c)
+
+		c.Lock()
+
+		ch := c.channels[target]
+		if ch == nil {
+			ch = &Channel{
+				Name:      target,
+				clients:   make(map[*Client]bool),
+				ytClients: make(map[*YTClient]time.Time),
+				ignore:    make(map[string]bool),
+			}
+			c.channels[target] = ch
+			go ch.init(c)
+		}
+
+		c.Unlock()
+
+		ch.join(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
 	}
-
-	c.Unlock()
-
-	ch.join(c, cl, m)
 }
 
 func (c *Cannula) part(cl *Client, m *irc.Message) {
-	target := c.verifyChannelTarget(cl, m, irc.PART)
+	target := c.verifyChannelTarget(cl, m, m.Command)
 	if target == "" {
 		return
 	}
 
-	c.RLock()
+	targets := strings.Split(target, ",")
 
-	ch := c.channels[target]
+	for _, target := range targets {
 
-	c.RUnlock()
+		c.RLock()
 
-	ch.part(c, cl, m)
+		ch := c.channels[target]
+
+		c.RUnlock()
+
+		ch.part(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
+	}
 }
 
 func (c *Cannula) privmsg(cl *Client, m *irc.Message) {
-	target := c.verifyTarget(cl, m, irc.PRIVMSG)
+	target := c.verifyTarget(cl, m, m.Command)
 	if target == "" {
 		return
 	}
@@ -424,14 +463,20 @@ func (c *Cannula) privmsg(cl *Client, m *irc.Message) {
 		return
 	}
 
-	if target != "" {
-		c.broadcast(m, cl.Prefix)
-		return
+	targets := strings.Split(target, ",")
+
+	ignore := cl.Prefix
+	if len(targets) > 1 {
+		ignore = nil
+	}
+
+	for _, target := range targets {
+		c.broadcast(&irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing}, ignore)
 	}
 }
 
 func (c *Cannula) notice(cl *Client, m *irc.Message) {
-	target := c.verifyTarget(cl, m, irc.NOTICE)
+	target := c.verifyTarget(cl, m, m.Command)
 	if target == "" {
 		return
 	}
@@ -441,9 +486,15 @@ func (c *Cannula) notice(cl *Client, m *irc.Message) {
 		return
 	}
 
-	if target != "" {
-		c.broadcast(m, cl.Prefix)
-		return
+	targets := strings.Split(target, ",")
+
+	ignore := cl.Prefix
+	if len(targets) > 1 {
+		ignore = nil
+	}
+
+	for _, target := range targets {
+		c.broadcast(&irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing}, ignore)
 	}
 }
 

@@ -136,6 +136,8 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 }
 
 func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
+	ch.broadcast(m, nil)
+
 	ch.Lock()
 
 	delete(ch.clients, cl)
@@ -144,8 +146,6 @@ func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
 	delete(cl.Channels, ch.Name)
 
 	ch.Unlock()
-
-	ch.broadcast(m, nil)
 }
 
 func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {

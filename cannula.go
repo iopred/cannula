@@ -469,13 +469,23 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 		ch.broadcast(m, ignore)
 
 		if m.Command == irc.PRIVMSG && ch.liveChatId != "" && cl != nil && cl.Service != nil {
+			message := m.Trailing
+			if strings.Index(message, "") == 0 {
+				message = strings.Trim(message, "")
+				if strings.Index(message, "ACTION ") == 0 {
+					message = message[7:]
+				} else {
+					return
+				}
+			}
+
 			c.rateLimit <- func() {
 				res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{
 					Snippet: &youtube.LiveChatMessageSnippet{
 						LiveChatId: ch.liveChatId,
 						Type:       "textMessageEvent",
 						TextMessageDetails: &youtube.LiveChatTextMessageDetails{
-							MessageText: m.Trailing,
+							MessageText: message,
 						},
 					},
 				}).Do()

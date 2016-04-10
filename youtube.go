@@ -111,7 +111,6 @@ func (c *Cannula) ytAuth() error {
 	c.service, err = c.ytCreateService(c.token)
 
 	if err := c.ytLoadTokens(); err != nil {
-		fmt.Println("Tokens file not found, creating.", err)
 		c.tokens = make(map[string]*oauth2.Token)
 		c.ytSaveTokens()
 	}
@@ -155,11 +154,17 @@ func (c *Cannula) ytCreateService(token *oauth2.Token) (*youtube.Service, error)
 	return youtube.New(c.config.Client(oauth2.NoContext, token))
 }
 
-func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}) {
+func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}, quit chan interface{}) {
 	errors := 0
 
 	pageToken := ""
 	for {
+		select {
+		case <-quit:
+			return
+		default:
+
+		}
 		list := c.service.LiveChatMessages.List(liveChatId, "id,snippet,authorDetails").MaxResults(200)
 		if pageToken != "" {
 			list.PageToken(pageToken)
@@ -168,7 +173,6 @@ func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}) {
 		liveChatMessageListResponse, err := list.Do()
 
 		if err != nil {
-			fmt.Println("Error polling", liveChatId, err)
 			errors++
 			if errors > 10 {
 				close(events)
@@ -193,29 +197,31 @@ func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}) {
 	}
 }
 
-func (c *Cannula) ytEventStream(videoID string) (string, chan interface{}) {
+func (c *Cannula) ytEventStream(videoID string) (string, chan interface{}, chan interface{}) {
 
 	r, err := c.service.Videos.List("snippet,liveStreamingDetails").Id(videoID).Do()
 	if err != nil {
-		return "", nil
+		return "", nil, nil
 	}
 
 	if len(r.Items) != 1 {
-		return "", nil
+		return "", nil, nil
 	}
 
 	v := r.Items[0]
 
 	if v.LiveStreamingDetails.ActiveLiveChatId == "" {
-		return "", nil
+		return "", nil, nil
 	}
 
 	events := make(chan interface{}, 100)
 	events <- v.Snippet
 
-	go c.ytPollMessages(v.LiveStreamingDetails.ActiveLiveChatId, events)
+	quit := make(chan interface{})
 
-	return v.LiveStreamingDetails.ActiveLiveChatId, events
+	go c.ytPollMessages(v.LiveStreamingDetails.ActiveLiveChatId, events, quit)
+
+	return v.LiveStreamingDetails.ActiveLiveChatId, events, quit
 }
 
 func (c *Cannula) ytClient(name string, channelID string) *YTClient {

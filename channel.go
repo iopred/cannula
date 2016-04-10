@@ -21,6 +21,7 @@ type Channel struct {
 	names      string
 	liveChatId string
 	ignore     map[string]bool
+	quitchan   chan interface{}
 }
 
 func (ch *Channel) init(c *Cannula) {
@@ -30,7 +31,7 @@ func (ch *Channel) init(c *Cannula) {
 		return
 	}
 
-	liveChatId, events := c.ytEventStream(ch.Name[1:])
+	liveChatId, events, quit := c.ytEventStream(ch.Name[1:])
 	if liveChatId == "" {
 		ch.Topic = "This chat has ended"
 		ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
@@ -39,7 +40,7 @@ func (ch *Channel) init(c *Cannula) {
 
 	ch.liveChatId = liveChatId
 
-	go ch.removeIdle()
+	go ch.removeIdle(c, quit)
 
 	for i := range events {
 		switch i := i.(type) {
@@ -47,9 +48,7 @@ func (ch *Channel) init(c *Cannula) {
 			ch.Topic = fmt.Sprintf("%s - %s", i.ChannelTitle, i.Title)
 			ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
 		case *youtube.LiveChatMessage:
-			if i.Snippet.FanFundingEventDetails == nil && i.Snippet.HasDisplayContent {
-				ch.broadcastYtMessage(c, i)
-			}
+			ch.broadcastYtMessage(c, i)
 		}
 	}
 
@@ -84,7 +83,11 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.JOIN, []string{ch.Name}, ytClient.Prefix.Name, false}, nil)
 	}
 
-	ch.broadcast(&irc.Message{ytClient.Prefix, irc.PRIVMSG, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
+	if m.Snippet.FanFundingEventDetails != nil {
+		ch.broadcast(&irc.Message{ytClient.Prefix, irc.NOTICE, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
+	} else if m.Snippet.HasDisplayContent {
+		ch.broadcast(&irc.Message{ytClient.Prefix, irc.PRIVMSG, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
+	}
 }
 
 func (ch *Channel) broadcast(m *irc.Message, ignore *irc.Prefix) {
@@ -164,9 +167,30 @@ func (ch *Channel) nick(c *Cannula, cl *Client, m *irc.Message) {
 	ch.broadcast(m, nil)
 }
 
-func (ch *Channel) removeIdle() {
+func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
+	empty := 0
 	for {
 		time.Sleep(time.Minute)
+
+		c.Lock()
+
+		// If we are empty for 5 minutes, stop polling.
+		if len(ch.clients) == 0 {
+			empty++
+			if empty > 5 {
+				close(quit)
+
+				delete(c.channels, ch.Name)
+
+				c.Unlock()
+
+				return
+			}
+		} else {
+			empty = 0
+		}
+
+		c.Unlock()
 
 		r := []*YTClient{}
 		now := time.Now()

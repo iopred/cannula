@@ -14,5 +14,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	c.Listen("173.164.240.150:6667")
+	c.Listen(":6667")
 }

@@ -233,7 +233,20 @@ func (c *Cannula) checkAuth(cl *Client) {
 
 			c.Unlock()
 
-			cl.Prefix = c.ytClient(ytc.Snippet.Title, ytc.Id).Prefix
+			ytcp := c.ytClient(ytc.Snippet.Title, ytc.Id).Prefix
+
+			c.RLock()
+			if c.names[ytcp.Name] != nil {
+				c.RUnlock()
+
+				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, "You are already logged in.", false}
+				cl.in <- &ServerClose{}
+				return
+			}
+
+			c.RUnlock()
+
+			cl.Prefix = ytcp
 
 			c.Lock()
 

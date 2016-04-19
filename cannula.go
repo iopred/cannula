@@ -397,7 +397,7 @@ func (c *Cannula) join(cl *Client, m *irc.Message) {
 		return
 	}
 
-	if len(m.Params) != 1 {
+	if len(m.Params) < 1 {
 		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{irc.JOIN}, "Not enough parameters", false}
 		return
 	}

@@ -87,7 +87,7 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.JOIN, []string{ch.Name}, ytClient.Prefix.Name, false}, nil)
 	}
 
-	if m.Snippet.FanFundingEventDetails != nil {
+	if m.Snippet.Type == "fanFundingEvent" || m.Snippet.Type == "newSponsorEvent" {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.NOTICE, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
 	} else if m.Snippet.HasDisplayContent {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.PRIVMSG, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)

@@ -183,6 +183,11 @@ func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}, qui
 			// Ignore the first results, we only want new chats.
 			if pageToken != "" {
 				for _, message := range liveChatMessageListResponse.Items {
+					if message.Snippet.Type == "chatEndedEvent" {
+						close(events)
+						return
+					}
+
 					events <- message
 				}
 			}

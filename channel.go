@@ -10,14 +10,21 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
+type ChannelClient struct {
+	Owner     bool
+	Moderator bool
+	Voice     bool // IRC Voice counts as a YouTube sponsor.
+	LastSpoke time.Time
+}
+
 type Channel struct {
 	sync.RWMutex
 
 	Name  string
 	Topic string
 
-	clients    map[*Client]bool
-	ytClients  map[*YTClient]time.Time
+	clients    map[*Client]*ChannelClient
+	ytClients  map[*YTClient]*ChannelClient
 	names      string
 	liveChatId string
 	ignore     map[string]bool
@@ -25,6 +32,8 @@ type Channel struct {
 }
 
 func (ch *Channel) init(c *Cannula) {
+	ch.Lock()
+
 	if len(ch.Name[1:]) != 11 {
 		ch.Topic = "Invalid YouTube VideoID"
 		ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
@@ -40,25 +49,39 @@ func (ch *Channel) init(c *Cannula) {
 
 	ch.liveChatId = liveChatId
 
+	ch.Unlock()
+
 	go ch.removeIdle(c, quit)
 
 	for i := range events {
 		switch i := i.(type) {
 		case *youtube.VideoSnippet:
+			ch.Lock()
+
 			ch.Topic = fmt.Sprintf("%s - %s", i.ChannelTitle, i.Title)
 			ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
+
+			ch.Unlock()
 		case *youtube.LiveChatMessage:
 			ch.broadcastYtMessage(c, i)
 		}
 	}
 
+	ch.Lock()
+
 	ch.broadcast(&irc.Message{c.prefix, irc.NOTICE, []string{ch.Name}, "This chat has ended", false}, nil)
 	ch.Topic = "This chat has ended"
 	ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
+
+	ch.Unlock()
 }
 
 func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
-	if m == nil || m.AuthorDetails == nil {
+	if m == nil {
+		return
+	}
+
+	if m.AuthorDetails == nil {
 		return
 	}
 
@@ -66,32 +89,55 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 
 	ch.Lock()
 
-	if ch.ignore[m.Id] {
-		delete(ch.ignore, m.Id)
-
-		ch.Unlock()
-
-		return
-	}
-
 	joined := false
 
-	if c.clients[ytClient.Prefix] == nil {
-		joined = ch.ytClients[ytClient].IsZero()
-		ch.ytClients[ytClient] = time.Now().Add(5 * time.Minute)
-	}
+	cl := c.clients[ytClient.Prefix]
 
-	ch.Unlock()
+	var ccl *ChannelClient
+
+	if cl == nil {
+		ccl = ch.ytClients[ytClient]
+		if ccl == nil {
+			ccl = &ChannelClient{}
+			ch.ytClients[ytClient] = ccl
+		}
+
+		joined = ccl.LastSpoke.IsZero()
+	} else {
+		ccl = ch.clients[cl]
+	}
 
 	if joined {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.JOIN, []string{ch.Name}, ytClient.Prefix.Name, false}, nil)
 	}
 
+	if m.AuthorDetails.IsChatOwner && !ccl.Owner {
+		ccl.Owner = true
+		ch.broadcast(&irc.Message{ytClient.Prefix, irc.MODE, []string{ch.Name, "+o", ytClient.Prefix.Name}, "", true}, nil)
+	}
+
+	if m.AuthorDetails.IsChatModerator && !ccl.Moderator {
+		ccl.Moderator = true
+		ch.broadcast(&irc.Message{ytClient.Prefix, irc.MODE, []string{ch.Name, "+h", ytClient.Prefix.Name}, "", true}, nil)
+	}
+
+	if m.AuthorDetails.IsChatSponsor && !ccl.Voice {
+		ccl.Voice = true
+		ch.broadcast(&irc.Message{ytClient.Prefix, irc.MODE, []string{ch.Name, "+v", ytClient.Prefix.Name}, "", true}, nil)
+	}
+
 	if m.Snippet.Type == "fanFundingEvent" || m.Snippet.Type == "newSponsorEvent" {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.NOTICE, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
 	} else if m.Snippet.HasDisplayContent {
-		ch.broadcast(&irc.Message{ytClient.Prefix, irc.PRIVMSG, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
+		ccl.LastSpoke = time.Now().Add(5 * time.Minute)
+		if ch.ignore[m.Id] {
+			delete(ch.ignore, m.Id)
+		} else {
+			ch.broadcast(&irc.Message{ytClient.Prefix, irc.PRIVMSG, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
+		}
 	}
+
+	ch.Unlock()
 }
 
 func (ch *Channel) broadcast(m *irc.Message, ignore *irc.Prefix) {
@@ -103,14 +149,27 @@ func (ch *Channel) broadcast(m *irc.Message, ignore *irc.Prefix) {
 	}
 }
 
+func (ch *Channel) name(p *irc.Prefix, ccl *ChannelClient) string {
+	if ccl.Owner {
+		return "@" + p.Name
+	}
+	if ccl.Moderator {
+		return "%" + p.Name
+	}
+	if ccl.Voice {
+		return "+" + p.Name
+	}
+	return p.Name
+}
+
 // Must be called in a lock
 func (ch *Channel) createNames() {
 	names := []string{}
-	for cl := range ch.clients {
-		names = append(names, cl.Prefix.Name)
+	for cl, ccl := range ch.clients {
+		names = append(names, ch.name(cl.Prefix, ccl))
 	}
-	for cl := range ch.ytClients {
-		names = append(names, cl.Prefix.Name)
+	for cl, ccl := range ch.ytClients {
+		names = append(names, ch.name(cl.Prefix, ccl))
 	}
 	ch.names = strings.Join(names, " ")
 }
@@ -118,16 +177,16 @@ func (ch *Channel) createNames() {
 func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 
-	if !ch.clients[cl] {
-		ch.clients[cl] = true
+	if ch.clients[cl] == nil {
+		ch.clients[cl] = &ChannelClient{}
 	}
 	ch.createNames()
-
-	ch.Unlock()
 
 	cl.Channels[ch.Name] = true
 
 	ch.broadcast(m, nil)
+
+	ch.Unlock()
 
 	if ch.Topic != "" {
 		cl.in <- &irc.Message{c.prefix, irc.RPL_TOPIC, []string{m.Prefix.Name, ch.Name}, ch.Topic, false}
@@ -136,9 +195,9 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 }
 
 func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
-	ch.broadcast(m, nil)
-
 	ch.Lock()
+
+	ch.broadcast(m, nil)
 
 	delete(ch.clients, cl)
 	ch.createNames()
@@ -156,9 +215,9 @@ func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {
 
 	delete(cl.Channels, ch.Name)
 
-	ch.Unlock()
-
 	ch.broadcast(m, nil)
+
+	ch.Unlock()
 }
 
 func (ch *Channel) nick(c *Cannula, cl *Client, m *irc.Message) {
@@ -166,9 +225,9 @@ func (ch *Channel) nick(c *Cannula, cl *Client, m *irc.Message) {
 
 	ch.createNames()
 
-	ch.Unlock()
-
 	ch.broadcast(m, nil)
+
+	ch.Unlock()
 }
 
 func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
@@ -201,8 +260,8 @@ func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
 
 		ch.Lock()
 
-		for cl, t := range ch.ytClients {
-			if now.After(t) {
+		for cl, ccl := range ch.ytClients {
+			if now.After(ccl.LastSpoke) {
 				r = append(r, cl)
 			}
 		}
@@ -211,10 +270,10 @@ func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
 			delete(ch.ytClients, cl)
 		}
 
-		ch.Unlock()
-
 		for _, cl := range r {
 			ch.broadcast(&irc.Message{cl.Prefix, irc.PART, []string{ch.Name}, "", true}, nil)
 		}
+
+		ch.Unlock()
 	}
 }

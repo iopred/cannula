@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"strings"
 	"time"
 
 	"google.golang.org/api/youtube/v3"
@@ -41,7 +40,7 @@ type YTClient struct {
 func NewYTClient(name string, channelID string) *YTClient {
 	return &YTClient{
 		// Replace spaces in names with a non breaking space.
-		Prefix: &irc.Prefix{strings.Replace(name, " ", " ", -1), channelID, "youtube.com"},
+		Prefix: &irc.Prefix{YTToIRC.Replace(name), channelID, "youtube.com"},
 
 		Name:      name,
 		ChannelID: channelID,

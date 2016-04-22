@@ -13,6 +13,10 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
+// These lines contain zero width spaces.
+var YTToIRC = strings.NewReplacer(" ", " ", "!", "❢", "@", "᪤", "+", "​+", "&", "​&", "%", "​%", ":", "：")
+var IRCToYT = strings.NewReplacer(" ", " ", "❢", "!", "᪤", "@", "​+", "+", "​&", "&", "​%", "%", "：", ":")
+
 type ServerClose struct {
 }
 
@@ -133,7 +137,7 @@ func (c *Cannula) verifyChannelTarget(cl *Client, m *irc.Message, command string
 				return false
 			}
 
-			if !c.channels[target].clients[cl] {
+			if c.channels[target].clients[cl] == nil {
 				cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
 				return false
 			}
@@ -177,7 +181,7 @@ func (c *Cannula) verifyTarget(cl *Client, m *irc.Message, command string) strin
 				return false
 			}
 
-			if strings.Index(target, "#") == 0 && !c.channels[target].clients[cl] {
+			if strings.Index(target, "#") == 0 && c.channels[target].clients[cl] == nil {
 				cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
 				return false
 			}
@@ -298,6 +302,8 @@ func (c *Cannula) checkAuth(cl *Client) {
 	cl.in <- &irc.Message{c.prefix, irc.RPL_WELCOME, []string{cl.Prefix.Name}, fmt.Sprintf("Welcome to the IRC Network %s", cl.Prefix), false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_YOURHOST, []string{cl.Prefix.Name}, fmt.Sprintf("Your host is %s running Cannula %s", c.prefix.Name, versionString), false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_CREATED, []string{cl.Prefix.Name}, fmt.Sprintf("This server was created %s at %s", startTime.Format("Mon Jan 2 2006"), startTime.Format("15:04:05 MST")), false}
+	cl.in <- &irc.Message{c.prefix, irc.RPL_BOUNCE, []string{cl.Prefix.Name}, "PREFIX=&@\\%+ STATUSMSG=&@\\%+ CHANTYPES=# CHANMODES=,,,m :are supported on this server", false}
+
 	cl.in <- &irc.Message{c.prefix, irc.RPL_MYINFO, []string{cl.Prefix.Name}, fmt.Sprintf("%s %s", c.prefix.Name, versionString), false}
 }
 
@@ -418,8 +424,8 @@ func (c *Cannula) join(cl *Client, m *irc.Message) {
 		if ch == nil {
 			ch = &Channel{
 				Name:      target,
-				clients:   make(map[*Client]bool),
-				ytClients: make(map[*YTClient]time.Time),
+				clients:   make(map[*Client]*ChannelClient),
+				ytClients: make(map[*YTClient]*ChannelClient),
 				ignore:    make(map[string]bool),
 			}
 			c.channels[target] = ch
@@ -529,7 +535,7 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 					return
 				}
 			}
-			message = strings.Replace(message, " ", " ", -1)
+			message = IRCToYT.Replace(message)
 
 			c.rateLimit <- func() {
 				res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{

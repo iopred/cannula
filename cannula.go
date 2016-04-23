@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ var startTime = time.Now()
 // These lines contain zero width spaces.
 var YTToIRC = strings.NewReplacer(" ", " ", "!", "❢", "@", "᪤", "+", "​+", "&", "​&", "%", "​%", ":", "：")
 var IRCToYT = strings.NewReplacer(" ", " ", "❢", "!", "᪤", "@", "​+", "+", "​&", "&", "​%", "%", "：", ":")
+var StripColors = regexp.MustCompile("\x1f|\x02|\x12|\x0f|\x16|\x03(?:\\d{1,2}(?:,\\d{1,2})?)?")
 
 type ServerClose struct {
 }
@@ -475,6 +477,7 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 				}
 			}
 			message = IRCToYT.Replace(message)
+			message = StripColors.ReplaceAllString(message, "")
 
 			c.rateLimit <- func() {
 				res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{

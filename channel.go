@@ -33,6 +33,7 @@ type Channel struct {
 
 func (ch *Channel) Init(c *Cannula) {
 	ch.Lock()
+	defer ch.Unlock()
 
 	if len(ch.Name[1:]) != 11 {
 		ch.Topic = "Invalid YouTube VideoID"
@@ -72,8 +73,6 @@ func (ch *Channel) Init(c *Cannula) {
 	ch.broadcast(&irc.Message{c.prefix, irc.NOTICE, []string{ch.Name}, "This chat has ended", false}, nil)
 	ch.Topic = "This chat has ended"
 	ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
-
-	ch.Unlock()
 }
 
 func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {

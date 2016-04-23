@@ -31,7 +31,7 @@ type Channel struct {
 	quitchan   chan interface{}
 }
 
-func (ch *Channel) init(c *Cannula) {
+func (ch *Channel) Init(c *Cannula) {
 	ch.Lock()
 
 	if len(ch.Name[1:]) != 11 {
@@ -54,17 +54,17 @@ func (ch *Channel) init(c *Cannula) {
 	go ch.removeIdle(c, quit)
 
 	for i := range events {
+		ch.Lock()
+
 		switch i := i.(type) {
 		case *youtube.VideoSnippet:
-			ch.Lock()
-
 			ch.Topic = fmt.Sprintf("%s - %s", i.ChannelTitle, i.Title)
 			ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
-
-			ch.Unlock()
 		case *youtube.LiveChatMessage:
 			ch.broadcastYtMessage(c, i)
 		}
+
+		ch.Unlock()
 	}
 
 	ch.Lock()
@@ -86,9 +86,6 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 	}
 
 	ytClient := c.YTClient(m.AuthorDetails.DisplayName, m.AuthorDetails.ChannelId)
-
-	ch.Lock()
-	defer ch.Unlock()
 
 	cl := c.clients[ytClient.Prefix]
 
@@ -139,6 +136,13 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 	}
 }
 
+func (ch *Channel) Broadcast(m *irc.Message, ignore *irc.Prefix) {
+	ch.RLock()
+	defer ch.RUnlock()
+
+	ch.broadcast(m, ignore)
+}
+
 func (ch *Channel) broadcast(m *irc.Message, ignore *irc.Prefix) {
 	for cl := range ch.clients {
 		if cl.Prefix == ignore {
@@ -173,7 +177,7 @@ func (ch *Channel) createNames() {
 	ch.names = strings.Join(names, " ")
 }
 
-func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
+func (ch *Channel) Join(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 	defer ch.Unlock()
 
@@ -195,7 +199,7 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 	cl.in <- &irc.Message{c.prefix, irc.RPL_NAMREPLY, []string{m.Prefix.Name, "=", ch.Name}, ch.names, false}
 }
 
-func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
+func (ch *Channel) Part(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 	defer ch.Unlock()
 
@@ -207,7 +211,7 @@ func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
 	delete(cl.Channels, ch.Name)
 }
 
-func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {
+func (ch *Channel) Quit(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 	defer ch.Unlock()
 
@@ -219,7 +223,7 @@ func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {
 	ch.broadcast(m, nil)
 }
 
-func (ch *Channel) nick(c *Cannula, cl *Client, m *irc.Message) {
+func (ch *Channel) Nick(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 	defer ch.Unlock()
 

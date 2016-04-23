@@ -13,6 +13,9 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
+var versionString = "v0.2"
+var startTime = time.Now()
+
 // These lines contain zero width spaces.
 var YTToIRC = strings.NewReplacer(" ", " ", "!", "❢", "@", "᪤", "+", "​+", "&", "​&", "%", "​%", ":", "：")
 var IRCToYT = strings.NewReplacer(" ", " ", "❢", "!", "᪤", "@", "​+", "+", "​&", "&", "​%", "%", "：", ":")
@@ -184,14 +187,11 @@ func (c *Cannula) quit(cl *Client, m *irc.Message) {
 	delete(c.names, cl.Prefix.Name)
 
 	for ch := range cl.Channels {
-		c.channels[ch].quit(c, cl, m)
+		c.channels[ch].Quit(c, cl, m)
 	}
 
 	cl.in <- &ServerClose{}
 }
-
-var startTime = time.Now()
-var versionString = "v0.1"
 
 func (c *Cannula) checkAuth(cl *Client) {
 	if cl.Prefix.User == "" || cl.Prefix.Host == "" || cl.Prefix.Name == "" {
@@ -340,7 +340,7 @@ func (c *Cannula) nick(cl *Client, m *irc.Message) {
 	m.Prefix = &irc.Prefix{cl.Prefix.Name, cl.Prefix.User, cl.Prefix.Host}
 
 	for ch := range cl.Channels {
-		c.channels[ch].nick(c, cl, m)
+		c.channels[ch].Nick(c, cl, m)
 	}
 
 	cl.Prefix.Name = name
@@ -380,10 +380,10 @@ func (c *Cannula) join(cl *Client, m *irc.Message) {
 				ignore:    make(map[string]bool),
 			}
 			c.channels[target] = ch
-			go ch.init(c)
+			go ch.Init(c)
 		}
 
-		ch.join(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
+		ch.Join(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
 	}
 }
 
@@ -397,7 +397,7 @@ func (c *Cannula) part(cl *Client, m *irc.Message) {
 
 	for _, target := range targets {
 		ch := c.channels[target]
-		ch.part(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
+		ch.Part(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
 	}
 }
 
@@ -462,7 +462,7 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 	if ch != nil {
 		cl := c.clients[m.Prefix]
 
-		ch.broadcast(m, ignore)
+		ch.Broadcast(m, ignore)
 
 		if m.Command == irc.PRIVMSG && ch.liveChatId != "" && cl != nil && cl.Service != nil {
 			message := m.Trailing

@@ -89,8 +89,6 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 
 	ch.Lock()
 
-	joined := false
-
 	cl := c.clients[ytClient.Prefix]
 
 	var ccl *ChannelClient
@@ -101,15 +99,18 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 			ccl = &ChannelClient{}
 			ch.ytClients[ytClient] = ccl
 		}
-
-		joined = ccl.LastSpoke.IsZero()
 	} else {
 		ccl = ch.clients[cl]
+		if ccl == nil {
+			ccl = &ChannelClient{}
+			ch.clients[cl] = ccl
+		}
 	}
 
-	if joined {
+	if ccl.LastSpoke.IsZero() {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.JOIN, []string{ch.Name}, ytClient.Prefix.Name, false}, nil)
 	}
+	ccl.LastSpoke = time.Now().Add(5 * time.Minute)
 
 	if m.AuthorDetails.IsChatOwner && !ccl.Owner {
 		ccl.Owner = true
@@ -129,7 +130,6 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 	if m.Snippet.Type == "fanFundingEvent" || m.Snippet.Type == "newSponsorEvent" {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.NOTICE, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
 	} else if m.Snippet.HasDisplayContent {
-		ccl.LastSpoke = time.Now().Add(5 * time.Minute)
 		if ch.ignore[m.Id] {
 			delete(ch.ignore, m.Id)
 		} else {
@@ -177,6 +177,9 @@ func (ch *Channel) createNames() {
 func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 
+	if cl.YTClient != nil {
+		delete(ch.ytClients, cl.YTClient)
+	}
 	if ch.clients[cl] == nil {
 		ch.clients[cl] = &ChannelClient{}
 	}

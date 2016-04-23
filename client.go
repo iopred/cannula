@@ -16,8 +16,9 @@ type ClientMessage struct {
 const timeout = 10 * time.Minute
 
 type Client struct {
-	Prefix  *irc.Prefix
-	Service *youtube.Service
+	Prefix   *irc.Prefix
+	Service  *youtube.Service
+	YTClient *YTClient
 
 	conn *irc.Conn
 	out  chan interface{}

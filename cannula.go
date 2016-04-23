@@ -78,6 +78,8 @@ func (c *Cannula) handleMessage(m *irc.Message) {
 	c.RLock()
 	cl := c.clients[m.Prefix]
 	if cl == nil {
+		c.RUnlock()
+
 		return
 	}
 	c.RUnlock()
@@ -203,11 +205,11 @@ func (c *Cannula) quit(cl *Client, m *irc.Message) {
 	delete(c.clients, cl.Prefix)
 	delete(c.names, cl.Prefix.Name)
 
-	c.Unlock()
-
 	for ch := range cl.Channels {
 		c.channels[ch].quit(c, cl, m)
 	}
+
+	c.Unlock()
 
 	cl.in <- &ServerClose{}
 }
@@ -243,8 +245,6 @@ func (c *Cannula) checkAuth(cl *Client) {
 		}
 	}
 
-	c.Unlock()
-
 	if cl.Service == nil {
 		cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, fmt.Sprintf("You have not linked your YouTube account properly. Visit: %s and follow the instructions to link your account.", c.ytGenerateAuthURL()), false}
 	} else {
@@ -257,38 +257,25 @@ func (c *Cannula) checkAuth(cl *Client) {
 			cl.Service = nil
 		} else {
 			ytc := res.Items[0]
+			ytcl := c.ytClient(ytc.Snippet.Title, ytc.Id)
 
 			old := cl.Prefix.Name
-
-			c.Lock()
 
 			delete(c.clients, cl.Prefix)
 			delete(c.names, cl.Prefix.Name)
 
-			c.Unlock()
-
-			ytcl := c.ytClient(ytc.Snippet.Title, ytc.Id)
-
-			c.RLock()
 			if c.names[ytcl.Prefix.Name] != nil {
-				c.RUnlock()
 
 				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, "You are already logged in.", false}
 				cl.in <- &ServerClose{}
 				return
 			}
 
-			c.RUnlock()
-
 			cl.Prefix = ytcl.Prefix
 			cl.YTClient = ytcl
 
-			c.Lock()
-
 			c.clients[cl.Prefix] = cl
 			c.names[cl.Prefix.Name] = cl
-
-			c.Unlock()
 
 			cl.in <- &irc.Message{c.prefix, irc.NICK, []string{old}, cl.Prefix.Name, false}
 
@@ -297,6 +284,8 @@ func (c *Cannula) checkAuth(cl *Client) {
 			}
 		}
 	}
+
+	c.Unlock()
 
 	cl.Authorized = true
 
@@ -366,17 +355,12 @@ func (c *Cannula) nick(cl *Client, m *irc.Message) {
 		return
 	}
 
-	c.RLock()
+	c.Lock()
 
 	if c.names[name] != nil {
-		c.RUnlock()
 		cl.in <- &irc.Message{c.prefix, irc.ERR_NICKNAMEINUSE, []string{name}, "Nickname is already in use", false}
 		return
 	}
-
-	c.RUnlock()
-
-	c.Lock()
 
 	if cl.Prefix.Name != "" {
 		delete(c.names, cl.Prefix.Name)
@@ -413,13 +397,14 @@ func (c *Cannula) join(cl *Client, m *irc.Message) {
 
 	targets := strings.Split(target, ",")
 
+	c.Lock()
+	defer c.Unlock()
+
 	for _, target := range targets {
 		if strings.Index(target, "#") != 0 {
 			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
-			return
+			continue
 		}
-
-		c.Lock()
 
 		ch := c.channels[target]
 		if ch == nil {
@@ -433,8 +418,6 @@ func (c *Cannula) join(cl *Client, m *irc.Message) {
 			go ch.init(c)
 		}
 
-		c.Unlock()
-
 		ch.join(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
 	}
 }
@@ -447,14 +430,11 @@ func (c *Cannula) part(cl *Client, m *irc.Message) {
 
 	targets := strings.Split(target, ",")
 
+	c.RLock()
+	defer c.RUnlock()
+
 	for _, target := range targets {
-
-		c.RLock()
-
 		ch := c.channels[target]
-
-		c.RUnlock()
-
 		ch.part(c, cl, &irc.Message{cl.Prefix, m.Command, []string{target}, m.Trailing, m.EmptyTrailing})
 	}
 }
@@ -517,12 +497,11 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 	target := m.Params[0]
 
 	c.RLock()
+	defer c.RUnlock()
 
 	ch := c.channels[target]
 	if ch != nil {
 		cl := c.clients[m.Prefix]
-
-		c.RUnlock()
 
 		ch.broadcast(m, ignore)
 
@@ -563,8 +542,6 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 
 	} else {
 		cl := c.names[target]
-
-		c.RUnlock()
 
 		if cl != nil {
 			cl.in <- m

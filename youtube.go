@@ -228,20 +228,19 @@ func (c *Cannula) ytEventStream(videoID string) (string, chan interface{}, chan 
 	return v.LiveStreamingDetails.ActiveLiveChatId, events, quit
 }
 
-func (c *Cannula) ytClient(name string, channelID string) *YTClient {
-	c.RLock()
+func (c *Cannula) YTClient(name string, channelID string) *YTClient {
+	c.Lock()
+	defer c.Unlock()
 
+	return c.ytClient(name, channelID)
+}
+
+func (c *Cannula) ytClient(name string, channelID string) *YTClient {
 	cl := c.ytClients[channelID]
 
-	c.RUnlock()
-
 	if cl == nil {
-		c.Lock()
-
 		cl = NewYTClient(name, channelID)
 		c.ytClients[channelID] = cl
-
-		c.Unlock()
 	}
 
 	return cl

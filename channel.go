@@ -85,9 +85,10 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 		return
 	}
 
-	ytClient := c.ytClient(m.AuthorDetails.DisplayName, m.AuthorDetails.ChannelId)
+	ytClient := c.YTClient(m.AuthorDetails.DisplayName, m.AuthorDetails.ChannelId)
 
 	ch.Lock()
+	defer ch.Unlock()
 
 	cl := c.clients[ytClient.Prefix]
 
@@ -136,8 +137,6 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 			ch.broadcast(&irc.Message{ytClient.Prefix, irc.PRIVMSG, []string{ch.Name}, m.Snippet.DisplayMessage, false}, nil)
 		}
 	}
-
-	ch.Unlock()
 }
 
 func (ch *Channel) broadcast(m *irc.Message, ignore *irc.Prefix) {
@@ -176,6 +175,7 @@ func (ch *Channel) createNames() {
 
 func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
+	defer ch.Unlock()
 
 	if cl.YTClient != nil {
 		delete(ch.ytClients, cl.YTClient)
@@ -189,8 +189,6 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 
 	ch.broadcast(m, nil)
 
-	ch.Unlock()
-
 	if ch.Topic != "" {
 		cl.in <- &irc.Message{c.prefix, irc.RPL_TOPIC, []string{m.Prefix.Name, ch.Name}, ch.Topic, false}
 	}
@@ -199,6 +197,7 @@ func (ch *Channel) join(c *Cannula, cl *Client, m *irc.Message) {
 
 func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
+	defer ch.Unlock()
 
 	ch.broadcast(m, nil)
 
@@ -206,12 +205,11 @@ func (ch *Channel) part(c *Cannula, cl *Client, m *irc.Message) {
 	ch.createNames()
 
 	delete(cl.Channels, ch.Name)
-
-	ch.Unlock()
 }
 
 func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
+	defer ch.Unlock()
 
 	delete(ch.clients, cl)
 	ch.createNames()
@@ -219,18 +217,15 @@ func (ch *Channel) quit(c *Cannula, cl *Client, m *irc.Message) {
 	delete(cl.Channels, ch.Name)
 
 	ch.broadcast(m, nil)
-
-	ch.Unlock()
 }
 
 func (ch *Channel) nick(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
+	defer ch.Unlock()
 
 	ch.createNames()
 
 	ch.broadcast(m, nil)
-
-	ch.Unlock()
 }
 
 func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
@@ -238,17 +233,20 @@ func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
 	for {
 		time.Sleep(time.Minute)
 
-		c.Lock()
+		ch.Lock()
 
 		// If we are empty for 5 minutes, stop polling.
 		if len(ch.clients) == 0 {
 			empty++
 			if empty > 5 {
+				ch.Unlock()
+
 				close(quit)
 
-				delete(c.channels, ch.Name)
+				c.Lock()
+				defer c.Unlock()
 
-				c.Unlock()
+				delete(c.channels, ch.Name)
 
 				return
 			}
@@ -256,12 +254,8 @@ func (ch *Channel) removeIdle(c *Cannula, quit chan interface{}) {
 			empty = 0
 		}
 
-		c.Unlock()
-
 		r := []*YTClient{}
 		now := time.Now()
-
-		ch.Lock()
 
 		for cl, ccl := range ch.ytClients {
 			if now.After(ccl.LastSpoke) {

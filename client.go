@@ -20,9 +20,10 @@ type Client struct {
 	Service  *youtube.Service
 	YTClient *YTClient
 
-	conn *irc.Conn
-	out  chan interface{}
-	in   chan interface{}
+	netconn net.Conn
+	conn    *irc.Conn
+	out     chan interface{}
+	in      chan interface{}
 
 	Pass       string
 	Authorized bool
@@ -34,6 +35,7 @@ func NewClient(prefix *irc.Prefix, conn net.Conn, out chan interface{}) *Client 
 
 	return &Client{
 		Prefix:   prefix,
+		netconn:  conn,
 		conn:     irc.NewConn(conn),
 		out:      out,
 		in:       make(chan interface{}, 100),
@@ -50,6 +52,7 @@ func (cl *Client) read() error {
 	for {
 		m, err := cl.conn.Decode()
 		if m == nil {
+			cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Closed.", false}}
 			return nil
 		}
 		if err != nil {
@@ -70,11 +73,11 @@ func (cl *Client) write() error {
 	for i := range cl.in {
 		switch i := i.(type) {
 		case *ServerClose:
-			cl.conn.Close()
+			cl.netconn.Close()
 			return nil
 		case *irc.Message:
 			fmt.Println(cl.Prefix, ">", i)
-
+			cl.netconn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
 			if err := cl.conn.Encode(i); err != nil {
 				cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}}
 				return err

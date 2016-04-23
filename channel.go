@@ -88,24 +88,16 @@ func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 	ytClient := c.YTClient(m.AuthorDetails.DisplayName, m.AuthorDetails.ChannelId)
 
 	cl := c.clients[ytClient.Prefix]
-
-	var ccl *ChannelClient
-
-	if cl == nil {
+	ccl := ch.clients[cl]
+	if ccl == nil {
 		ccl = ch.ytClients[ytClient]
 		if ccl == nil {
 			ccl = &ChannelClient{}
 			ch.ytClients[ytClient] = ccl
 		}
-	} else {
-		ccl = ch.clients[cl]
-		if ccl == nil {
-			ccl = &ChannelClient{}
-			ch.clients[cl] = ccl
-		}
 	}
 
-	if ccl.LastSpoke.IsZero() {
+	if cl == nil && ccl.LastSpoke.IsZero() {
 		ch.broadcast(&irc.Message{ytClient.Prefix, irc.JOIN, []string{ch.Name}, ytClient.Prefix.Name, false}, nil)
 	}
 	ccl.LastSpoke = time.Now().Add(5 * time.Minute)

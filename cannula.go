@@ -565,6 +565,6 @@ func (c *Cannula) Listen(laddr string) error {
 
 func (c *Cannula) Exit() {
 	for _, cl := range c.clients {
-		cl.in <- &irc.Message{c.prefix, irc.KILL, []string{cl.Prefix.Name}, "IRC server is being restarted.", false}
+		cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, "IRC server is being restarted.", false}
 	}
 }

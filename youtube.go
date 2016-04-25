@@ -201,31 +201,30 @@ func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}, qui
 	}
 }
 
-func (c *Cannula) ytEventStream(videoID string) (string, chan interface{}, chan interface{}) {
+func (c *Cannula) ytEventStream(videoID string) (string, *youtube.VideoSnippet, chan interface{}, chan interface{}) {
 
 	r, err := c.service.Videos.List("snippet,liveStreamingDetails").Id(videoID).Do()
 	if err != nil {
-		return "", nil, nil
+		return "", nil, nil, nil
 	}
 
 	if len(r.Items) != 1 {
-		return "", nil, nil
+		return "", nil, nil, nil
 	}
 
 	v := r.Items[0]
 
 	if v.LiveStreamingDetails.ActiveLiveChatId == "" {
-		return "", nil, nil
+		return "", v.Snippet, nil, nil
 	}
 
 	events := make(chan interface{}, 100)
-	events <- v.Snippet
 
 	quit := make(chan interface{})
 
 	go c.ytPollMessages(v.LiveStreamingDetails.ActiveLiveChatId, events, quit)
 
-	return v.LiveStreamingDetails.ActiveLiveChatId, events, quit
+	return v.LiveStreamingDetails.ActiveLiveChatId, v.Snippet, events, quit
 }
 
 func (c *Cannula) YTClient(name string, channelID string) *YTClient {

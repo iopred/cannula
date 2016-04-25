@@ -35,14 +35,16 @@ func (ch *Channel) Init(c *Cannula) {
 
 	if len(ch.Name[1:]) != 11 {
 		ch.Topic = "Invalid YouTube VideoID"
-		ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
 		return
 	}
 
-	liveChatId, events, quit := c.ytEventStream(ch.Name[1:])
+	liveChatId, snippet, events, quit := c.ytEventStream(ch.Name[1:])
 	if liveChatId == "" {
-		ch.Topic = "This chat has ended"
-		ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
+		if snippet != nil {
+			ch.Topic = fmt.Sprintf("%s - %s", snippet.ChannelTitle, snippet.Title) + " - This chat has ended"
+		} else {
+			ch.Topic = "This chat has ended"
+		}
 		return
 	}
 
@@ -69,7 +71,7 @@ func (ch *Channel) Init(c *Cannula) {
 	ch.Lock()
 
 	ch.broadcast(&irc.Message{c.prefix, irc.NOTICE, []string{ch.Name}, "This chat has ended", false}, nil)
-	ch.Topic = "This chat has ended"
+	ch.Topic += " - This chat has ended"
 	ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
 }
 

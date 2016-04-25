@@ -39,12 +39,17 @@ func (ch *Channel) Init(c *Cannula) {
 	}
 
 	liveChatId, snippet, events, quit := c.ytEventStream(ch.Name[1:])
+	if snippet != nil {
+		ch.Topic = fmt.Sprintf("%s - %s", snippet.ChannelTitle, snippet.Title)
+	}
+
 	if liveChatId == "" {
-		if snippet != nil {
-			ch.Topic = fmt.Sprintf("%s - %s", snippet.ChannelTitle, snippet.Title) + " - This chat has ended"
+		if ch.Topic != "" {
+			ch.Topic += " - This chat has ended"
 		} else {
 			ch.Topic = "This chat has ended"
 		}
+
 		return
 	}
 

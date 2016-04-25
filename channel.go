@@ -2,7 +2,6 @@ package cannula
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +24,6 @@ type Channel struct {
 
 	clients    map[*Client]*ChannelClient
 	ytClients  map[*YTClient]*ChannelClient
-	names      string
 	liveChatId string
 	ignore     map[string]bool
 	quitchan   chan interface{}
@@ -143,6 +141,37 @@ func (ch *Channel) broadcast(m *irc.Message, ignore *irc.Prefix) {
 	}
 }
 
+func (ch *Channel) broadcastNames(c *Cannula, cl *Client) {
+	blank := &irc.Message{c.prefix, irc.RPL_NAMREPLY, []string{cl.Prefix.Name, "=", ch.Name}, "", true}
+	rem := 512 - blank.Len()
+
+	if rem < 0 {
+		cl.in <- &irc.Message{c.prefix, irc.RPL_ENDOFNAMES, []string{ch.Name}, "", false}
+		return
+	}
+
+	names := ""
+	for ncl, nccl := range ch.clients {
+		name := ch.name(ncl.Prefix, nccl)
+		if rem-len(names)-(len(name)+1) < 0 {
+			cl.in <- &irc.Message{c.prefix, irc.RPL_NAMREPLY, []string{cl.Prefix.Name, "=", ch.Name}, names, false}
+			names = ""
+		}
+		names += name + " "
+	}
+	for ncl, nccl := range ch.ytClients {
+		name := ch.name(ncl.Prefix, nccl)
+		if rem-len(names)-(len(name)+1) < 0 {
+			cl.in <- &irc.Message{c.prefix, irc.RPL_NAMREPLY, []string{cl.Prefix.Name, "=", ch.Name}, names, false}
+			names = ""
+		}
+		names += name + " "
+	}
+
+	cl.in <- &irc.Message{c.prefix, irc.RPL_NAMREPLY, []string{cl.Prefix.Name, "=", ch.Name}, names, false}
+	cl.in <- &irc.Message{c.prefix, irc.RPL_ENDOFNAMES, []string{ch.Name}, "", false}
+}
+
 func (ch *Channel) name(p *irc.Prefix, ccl *ChannelClient) string {
 	if ccl.Owner {
 		return "@" + p.Name
@@ -156,18 +185,6 @@ func (ch *Channel) name(p *irc.Prefix, ccl *ChannelClient) string {
 	return p.Name
 }
 
-// Must be called in a lock
-func (ch *Channel) createNames() {
-	names := []string{}
-	for cl, ccl := range ch.clients {
-		names = append(names, ch.name(cl.Prefix, ccl))
-	}
-	for cl, ccl := range ch.ytClients {
-		names = append(names, ch.name(cl.Prefix, ccl))
-	}
-	ch.names = strings.Join(names, " ")
-}
-
 func (ch *Channel) Join(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 	defer ch.Unlock()
@@ -178,7 +195,6 @@ func (ch *Channel) Join(c *Cannula, cl *Client, m *irc.Message) {
 	if ch.clients[cl] == nil {
 		ch.clients[cl] = &ChannelClient{}
 	}
-	ch.createNames()
 
 	cl.Channels[ch.Name] = true
 
@@ -187,7 +203,7 @@ func (ch *Channel) Join(c *Cannula, cl *Client, m *irc.Message) {
 	if ch.Topic != "" {
 		cl.in <- &irc.Message{c.prefix, irc.RPL_TOPIC, []string{m.Prefix.Name, ch.Name}, ch.Topic, false}
 	}
-	cl.in <- &irc.Message{c.prefix, irc.RPL_NAMREPLY, []string{m.Prefix.Name, "=", ch.Name}, ch.names, false}
+	ch.broadcastNames(c, cl)
 }
 
 func (ch *Channel) Part(c *Cannula, cl *Client, m *irc.Message) {
@@ -197,8 +213,6 @@ func (ch *Channel) Part(c *Cannula, cl *Client, m *irc.Message) {
 	ch.broadcast(m, nil)
 
 	delete(ch.clients, cl)
-	ch.createNames()
-
 	delete(cl.Channels, ch.Name)
 }
 
@@ -207,8 +221,6 @@ func (ch *Channel) Quit(c *Cannula, cl *Client, m *irc.Message) {
 	defer ch.Unlock()
 
 	delete(ch.clients, cl)
-	ch.createNames()
-
 	delete(cl.Channels, ch.Name)
 
 	ch.broadcast(m, nil)
@@ -217,8 +229,6 @@ func (ch *Channel) Quit(c *Cannula, cl *Client, m *irc.Message) {
 func (ch *Channel) Nick(c *Cannula, cl *Client, m *irc.Message) {
 	ch.Lock()
 	defer ch.Unlock()
-
-	ch.createNames()
 
 	ch.broadcast(m, nil)
 }

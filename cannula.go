@@ -562,3 +562,9 @@ func (c *Cannula) Listen(laddr string) error {
 		go c.handleConn(conn)
 	}
 }
+
+func (c *Cannula) Exit() {
+	for _, cl := range c.clients {
+		cl.in <- &irc.Message{c.prefix, irc.KILL, []string{cl.Prefix.Name}, "IRC server is being restarted.", false}
+	}
+}

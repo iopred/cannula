@@ -267,8 +267,10 @@ func (c *Cannula) checkAuth(cl *Client) {
 	cl.in <- &irc.Message{c.prefix, irc.RPL_YOURHOST, []string{cl.Prefix.Name}, fmt.Sprintf("Your host is %s running Cannula %s", c.prefix.Name, versionString), false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_CREATED, []string{cl.Prefix.Name}, fmt.Sprintf("This server was created %s at %s", startTime.Format("Mon Jan 2 2006"), startTime.Format("15:04:05 MST")), false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_BOUNCE, []string{cl.Prefix.Name}, "PREFIX=&@\\%+ STATUSMSG=&@\\%+ CHANTYPES=# CHANMODES=,,,m :are supported on this server", false}
-
 	cl.in <- &irc.Message{c.prefix, irc.RPL_MYINFO, []string{cl.Prefix.Name}, fmt.Sprintf("%s %s", c.prefix.Name, versionString), false}
+	cl.in <- &irc.Message{c.prefix, irc.RPL_MOTDSTART, []string{cl.Prefix.Name}, fmt.Sprintf("- %s Message of the day -", c.prefix.Name), false}
+	cl.in <- &irc.Message{c.prefix, irc.RPL_MOTD, []string{cl.Prefix.Name}, "- If you get a lot of rate limit errors, consider adding your account as a moderator.", false}
+	cl.in <- &irc.Message{c.prefix, irc.RPL_ENDOFMOTD, []string{cl.Prefix.Name}, "End of MOTD command", false}
 }
 
 func (c *Cannula) pass(cl *Client, m *irc.Message) {
@@ -500,7 +502,7 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 					}).Do()
 
 					if err != nil {
-						cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, fmt.Sprintf("Error sending message: %s", strings.Replace(err.Error(), "\n", "", -1)), false}
+						cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{target}, fmt.Sprintf("Error sending message: %s", strings.Replace(err.Error(), "\n", "", -1)), false}
 						return
 					}
 

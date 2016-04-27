@@ -479,25 +479,36 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 			message = IRCToYT.Replace(message)
 			message = StripColors.ReplaceAllString(message, "")
 
-			c.rateLimit <- func() {
-				res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{
-					Snippet: &youtube.LiveChatMessageSnippet{
-						LiveChatId: ch.liveChatId,
-						Type:       "textMessageEvent",
-						TextMessageDetails: &youtube.LiveChatTextMessageDetails{
-							MessageText: message,
-						},
-					},
-				}).Do()
-
-				if err != nil {
-					return
+			// Send messages of 200 characters.
+			for i := 0; i < len(message); i += 200 {
+				m := i + 200
+				if m > len(message) {
+					m = len(message)
 				}
 
-				ch.Lock()
-				defer ch.Unlock()
+				me := message[i:m]
 
-				ch.ignore[res.Id] = true
+				c.rateLimit <- func() {
+					res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{
+						Snippet: &youtube.LiveChatMessageSnippet{
+							LiveChatId: ch.liveChatId,
+							Type:       "textMessageEvent",
+							TextMessageDetails: &youtube.LiveChatTextMessageDetails{
+								MessageText: me,
+							},
+						},
+					}).Do()
+
+					if err != nil {
+						cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, fmt.Sprintf("Error sending message: %s", strings.Replace(err.Error(), "\n", "", -1)), false}
+						return
+					}
+
+					ch.Lock()
+					defer ch.Unlock()
+
+					ch.ignore[res.Id] = true
+				}
 			}
 		}
 

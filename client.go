@@ -80,6 +80,7 @@ func (cl *Client) write() error {
 			cl.netconn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
 			if err := cl.conn.Encode(i); err != nil {
 				cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}}
+				cl.netconn.Close()
 				return err
 			}
 		}

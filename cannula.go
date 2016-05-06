@@ -595,13 +595,13 @@ func (c *Cannula) mode(cl *Client, m *irc.Message) {
 			return
 		}
 
-		target := m.Params[2]
+		target2 := m.Params[2]
 		var ytc *YTClient
-		t := c.names[target]
+		t := c.names[target2]
 
 		if t == nil {
 			// Try get the target from the hostmask.
-			match := channelIDRegexp.FindStringSubmatch(target)
+			match := channelIDRegexp.FindStringSubmatch(target2)
 			if match != nil {
 				ytc = c.ytClients[match[1]]
 			}
@@ -610,7 +610,7 @@ func (c *Cannula) mode(cl *Client, m *irc.Message) {
 		}
 
 		if ytc == nil {
-			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target}, "No such nick/channel", false}
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target2}, "No such nick/channel", false}
 			return
 		}
 

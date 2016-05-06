@@ -84,6 +84,25 @@ func (ch *Channel) Init(c *Cannula) {
 	ch.broadcast(&irc.Message{c.prefix, irc.TOPIC, []string{ch.Name}, ch.Topic, false}, nil)
 }
 
+func (ch *Channel) YTClient(c *Cannula, name string) *YTClient {
+	ch.RLock()
+	defer ch.RUnlock()
+
+	cl := c.names[name]
+	if cl != nil && ch.clients[cl] != nil {
+		return cl.YTClient
+	}
+
+	// It's not a connected client, we need to actually walk through our map :(
+	for ytc := range ch.ytClients {
+		if ytc.Prefix.Name == name {
+			return ytc
+		}
+	}
+
+	return nil
+}
+
 func (ch *Channel) broadcastYtMessage(c *Cannula, m *youtube.LiveChatMessage) {
 	if m == nil {
 		return

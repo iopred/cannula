@@ -108,6 +108,10 @@ func (c *Cannula) handleMessage(m *irc.Message) {
 		c.notice(cl, m)
 	case irc.PING:
 		c.ping(cl, m)
+	case irc.MODE:
+		c.mode(cl, m)
+	case irc.KICK:
+		c.kick(cl, m)
 	}
 }
 
@@ -270,6 +274,7 @@ func (c *Cannula) checkAuth(cl *Client) {
 	cl.in <- &irc.Message{c.prefix, irc.RPL_MYINFO, []string{cl.Prefix.Name}, fmt.Sprintf("%s %s", c.prefix.Name, versionString), false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_MOTDSTART, []string{cl.Prefix.Name}, fmt.Sprintf("- %s Message of the day -", c.prefix.Name), false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_MOTD, []string{cl.Prefix.Name}, "- If you get a lot of rate limit errors, consider adding your account as a moderator.", false}
+	cl.in <- &irc.Message{c.prefix, irc.RPL_MOTD, []string{cl.Prefix.Name}, "- Moderation actions are now supported. /kick will time out a user for 5 minutes. +b (ban) will ban a user.", false}
 	cl.in <- &irc.Message{c.prefix, irc.RPL_ENDOFMOTD, []string{cl.Prefix.Name}, "End of MOTD command", false}
 }
 
@@ -453,6 +458,182 @@ func (c *Cannula) notice(cl *Client, m *irc.Message) {
 
 func (c *Cannula) ping(cl *Client, m *irc.Message) {
 	cl.in <- &irc.Message{c.prefix, irc.PONG, []string{}, m.Trailing, m.EmptyTrailing}
+}
+
+func (c *Cannula) kick(cl *Client, m *irc.Message) {
+	if !cl.Authorized {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NOTREGISTERED, []string{}, "You have not registered", false}
+		return
+	}
+
+	if len(m.Params) != 2 {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{m.Command}, "Not enough parameters", false}
+		return
+	}
+
+	channels := strings.Split(m.Params[0], ",")
+	targets := strings.Split(m.Params[1], ",")
+
+	if len(channels) != len(targets) {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NEEDMOREPARAMS, []string{m.Command}, "Not enough parameters", false}
+		return
+	}
+
+	for i := range channels {
+		channel := channels[i]
+		target := targets[i]
+
+		if strings.Index(channel, "#") != 0 {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{channel}, "No such channel", false}
+			continue
+		}
+
+		ch := c.channels[channel]
+		if ch == nil {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{channel}, "No such channel", false}
+			continue
+		}
+
+		ccl := ch.clients[cl]
+		if ccl == nil {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{channel}, "You're not on that channel", false}
+			continue
+		}
+
+		if !ccl.Moderator && !ccl.Owner {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_CHANOPRIVSNEEDED, []string{channel}, "You're not channel operator", false}
+			continue
+		}
+
+		ytc := ch.YTClient(c, target)
+		if ytc == nil {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target}, "No such nick/channel", false}
+			continue
+		}
+
+		c.rateLimit <- func() {
+			_, err := cl.Service.LiveChatBans.Insert("snippet", &youtube.LiveChatBan{
+				Snippet: &youtube.LiveChatBanSnippet{
+					LiveChatId: ch.liveChatId,
+					BannedUserDetails: &youtube.ChannelProfileDetails{
+						ChannelId: ytc.ChannelID,
+					},
+					Type:               "temporary",
+					BanDurationSeconds: 5 * 60,
+				},
+			}).Do()
+
+			if err != nil {
+				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{channel}, fmt.Sprintf("Error timing out user: %s (%s): %s", ytc.Prefix.Name, ytc.ChannelID, strings.Replace(err.Error(), "\n", "", -1)), false}
+			} else {
+				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{channel}, fmt.Sprintf("%s has been timed out.", ytc.Prefix.Name), false}
+			}
+		}
+	}
+}
+
+var channelIDRegexp = regexp.MustCompile("@(UC.{22})\\.youtube\\.com")
+
+func (c *Cannula) mode(cl *Client, m *irc.Message) {
+	if !cl.Authorized {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NOTREGISTERED, []string{}, "You have not registered", false}
+		return
+	}
+
+	if len(m.Params) == 0 {
+		// MODE not supported
+		return
+	}
+
+	target := m.Params[0]
+
+	if c.names[target] != nil {
+		// MODE <user> not supported
+		return
+	}
+
+	if strings.Index(target, "#") != 0 {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target}, "No such nick/channel", false}
+		return
+	}
+
+	ch := c.channels[target]
+	if ch == nil {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHCHANNEL, []string{target}, "No such channel", false}
+		return
+	}
+
+	ccl := ch.clients[cl]
+	if ccl == nil {
+		cl.in <- &irc.Message{c.prefix, irc.ERR_NOTONCHANNEL, []string{target}, "You're not on that channel", false}
+		return
+	}
+
+	if len(m.Params) == 1 {
+		// MODE <channel> not supported
+		return
+	}
+
+	mode := m.Params[1]
+
+	switch mode {
+	case "-b":
+		if !ccl.Moderator && !ccl.Owner {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_CHANOPRIVSNEEDED, []string{target}, "You're not channel operator", false}
+			return
+		}
+
+		cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{target}, "YouTube does not provide a reliable way to remove a ban at this time, manage your bans in the address book: https://www.youtube.com/address_book", false}
+	case "+b":
+		if len(m.Params) < 3 {
+			cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{target}, "YouTube does not provide a reliable way to list bans at this time, manage your bans in the address book: https://www.youtube.com/address_book", false}
+			return
+		}
+
+		if !ccl.Moderator && !ccl.Owner {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_CHANOPRIVSNEEDED, []string{target}, "You're not channel operator", false}
+			return
+		}
+
+		target := m.Params[2]
+		var ytc *YTClient
+		t := c.names[target]
+
+		if t == nil {
+			// Try get the target from the hostmask.
+			match := channelIDRegexp.FindStringSubmatch(target)
+			if match != nil {
+				ytc = c.ytClients[match[1]]
+			}
+		} else {
+			ytc = t.YTClient
+		}
+
+		if ytc == nil {
+			cl.in <- &irc.Message{c.prefix, irc.ERR_NOSUCHNICK, []string{target}, "No such nick/channel", false}
+			return
+		}
+
+		c.rateLimit <- func() {
+			_, err := cl.Service.LiveChatBans.Insert("snippet", &youtube.LiveChatBan{
+				Snippet: &youtube.LiveChatBanSnippet{
+					LiveChatId: ch.liveChatId,
+					BannedUserDetails: &youtube.ChannelProfileDetails{
+						ChannelId: ytc.ChannelID,
+					},
+					Type: "permanent",
+				},
+			}).Do()
+
+			if err != nil {
+				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{target}, fmt.Sprintf("Error banning user: %s (%s): %s", ytc.Prefix.Name, ytc.ChannelID, strings.Replace(err.Error(), "\n", "", -1)), false}
+			} else {
+				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{target}, fmt.Sprintf("%s has been banned.", ytc.Prefix.Name), false}
+			}
+		}
+	default:
+		cl.in <- &irc.Message{c.prefix, irc.ERR_UMODEUNKNOWNFLAG, []string{}, "Unknown MODE flag", false}
+	}
 }
 
 func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {

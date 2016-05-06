@@ -40,7 +40,7 @@ type YTClient struct {
 func NewYTClient(name string, channelID string) *YTClient {
 	return &YTClient{
 		// Replace spaces in names with a non breaking space.
-		Prefix: &irc.Prefix{YTToIRC.Replace(name), channelID, "youtube.com"},
+		Prefix: &irc.Prefix{YTToIRC.Replace(name), channelID, channelID + ".youtube.com"},
 
 		Name:      name,
 		ChannelID: channelID,

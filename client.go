@@ -50,6 +50,7 @@ func (cl *Client) handle() {
 
 func (cl *Client) read() error {
 	for {
+		cl.netconn.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		m, err := cl.conn.Decode()
 		if m == nil {
 			cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Closed.", false}}

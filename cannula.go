@@ -14,7 +14,7 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-var versionString = "v0.2"
+var versionString = "v0.21"
 var startTime = time.Now()
 
 // These lines contain zero width spaces.
@@ -58,7 +58,7 @@ func New() (*Cannula, error) {
 	return c, nil
 }
 
-func (c *Cannula) handleConn(conn net.Conn) error {
+func (c *Cannula) handleConn(conn net.Conn) {
 	cl := NewClient(&irc.Prefix{}, conn, c.in)
 
 	c.Lock()
@@ -66,16 +66,14 @@ func (c *Cannula) handleConn(conn net.Conn) error {
 
 	c.clients[cl.Prefix] = cl
 
-	go cl.handle()
-
-	return nil
+	cl.handle()
 }
 
 func (c *Cannula) handle() {
 	for i := range c.in {
 		switch i := i.(type) {
-		case *ClientMessage:
-			c.handleMessage(i.Message)
+		case *irc.Message:
+			c.handleMessage(i)
 		}
 	}
 }
@@ -241,11 +239,12 @@ func (c *Cannula) checkAuth(cl *Client) {
 
 			old := cl.Prefix.Name
 
+			// Delete the current client, as the nick and yt nick may match.
 			delete(c.clients, cl.Prefix)
 			delete(c.names, cl.Prefix.Name)
 
+			// If the name for the youtube prefix already exist, we are free to kill this connection as we have already deleted it from the client list.
 			if c.names[ytcl.Prefix.Name] != nil {
-
 				cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, "You are already logged in.", false}
 				cl.in <- &ServerClose{}
 				return
@@ -457,7 +456,7 @@ func (c *Cannula) notice(cl *Client, m *irc.Message) {
 }
 
 func (c *Cannula) ping(cl *Client, m *irc.Message) {
-	cl.in <- &irc.Message{c.prefix, irc.PONG, []string{}, m.Trailing, m.EmptyTrailing}
+	cl.in <- &irc.Message{nil, irc.PONG, m.Params, m.Trailing, m.EmptyTrailing}
 }
 
 func (c *Cannula) kick(cl *Client, m *irc.Message) {

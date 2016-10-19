@@ -9,10 +9,6 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-type ClientMessage struct {
-	*irc.Message
-}
-
 const timeout = 10 * time.Minute
 
 type Client struct {
@@ -53,18 +49,18 @@ func (cl *Client) read() error {
 		cl.netconn.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		m, err := cl.conn.Decode()
 		if m == nil {
-			cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Closed.", false}}
-			return nil
+			continue
 		}
 		if err != nil {
-			cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}}
+			fmt.Println(cl.Prefix, "Read error")
+			cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
 			return err
 		}
 
 		fmt.Println(cl.Prefix, "<", m)
 
 		m.Prefix = cl.Prefix
-		cl.out <- &ClientMessage{m}
+		cl.out <- m
 	}
 
 	return nil
@@ -74,18 +70,24 @@ func (cl *Client) write() error {
 	for i := range cl.in {
 		switch i := i.(type) {
 		case *ServerClose:
-			cl.netconn.Close()
+			cl.close()
 			return nil
 		case *irc.Message:
 			fmt.Println(cl.Prefix, ">", i)
 			cl.netconn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
 			if err := cl.conn.Encode(i); err != nil {
-				cl.out <- &ClientMessage{&irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}}
-				cl.netconn.Close()
+				fmt.Println(cl.Prefix, "Write error")
+				cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}
+				cl.close()
 				return err
 			}
 		}
 	}
 
 	return nil
+}
+
+func (cl *Client) close() {
+	cl.netconn.Close()
+	close(cl.in)
 }

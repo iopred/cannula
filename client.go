@@ -78,7 +78,6 @@ func (cl *Client) write() error {
 			if err := cl.conn.Encode(i); err != nil {
 				fmt.Println(cl.Prefix, "Write error")
 				cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}
-				cl.close()
 				return err
 			}
 		}

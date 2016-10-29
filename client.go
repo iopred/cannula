@@ -40,53 +40,44 @@ func NewClient(prefix *irc.Prefix, conn net.Conn, out chan interface{}) *Client 
 }
 
 func (cl *Client) handle() {
-	go cl.read()
-	go cl.write()
-}
+	go func() {
+		for {
+			cl.netconn.SetReadDeadline(time.Now().Add(10 * time.Minute))
+			m, err := cl.conn.Decode()
+			if err != nil {
+				fmt.Println(cl.Prefix, "Read error")
+				break
+			}
+			if m == nil {
+				continue
+			}
 
-func (cl *Client) read() error {
+			fmt.Println(cl.Prefix, "<", m)
+
+			m.Prefix = cl.Prefix
+			cl.out <- m
+		}
+		cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
+	}()
+
 	for {
-		cl.netconn.SetReadDeadline(time.Now().Add(10 * time.Minute))
-		m, err := cl.conn.Decode()
-		if m == nil {
-			continue
-		}
-		if err != nil {
-			fmt.Println(cl.Prefix, "Read error")
-			cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
-			return err
-		}
-
-		fmt.Println(cl.Prefix, "<", m)
-
-		m.Prefix = cl.Prefix
-		cl.out <- m
-	}
-
-	return nil
-}
-
-func (cl *Client) write() error {
-	for i := range cl.in {
-		switch i := i.(type) {
-		case *ServerClose:
-			cl.close()
-			return nil
-		case *irc.Message:
-			fmt.Println(cl.Prefix, ">", i)
-			cl.netconn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
-			if err := cl.conn.Encode(i); err != nil {
-				fmt.Println(cl.Prefix, "Write error")
-				cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}
-				return err
+		select {
+		case i := <-cl.in:
+			switch i := i.(type) {
+			case *ServerClose:
+				break
+				return
+			case *irc.Message:
+				fmt.Println(cl.Prefix, ">", i)
+				cl.netconn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
+				if err := cl.conn.Encode(i); err != nil {
+					fmt.Println(cl.Prefix, "Write error")
+					cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}
+				}
 			}
 		}
 	}
 
-	return nil
-}
-
-func (cl *Client) close() {
 	cl.netconn.Close()
 	close(cl.in)
 }

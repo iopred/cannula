@@ -14,7 +14,7 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-var versionString = "v0.21"
+var versionString = "v0.3"
 var startTime = time.Now()
 
 // These lines contain zero width spaces.
@@ -66,7 +66,7 @@ func (c *Cannula) handleConn(conn net.Conn) {
 
 	c.clients[cl.Prefix] = cl
 
-	cl.handle()
+	go cl.handle()
 }
 
 func (c *Cannula) handle() {
@@ -193,8 +193,6 @@ func (c *Cannula) quit(cl *Client, m *irc.Message) {
 	for ch := range cl.Channels {
 		c.channels[ch].Quit(c, cl, m)
 	}
-
-	cl.in <- &ServerClose{}
 }
 
 func (c *Cannula) checkAuth(cl *Client) {

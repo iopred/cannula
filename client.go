@@ -76,6 +76,8 @@ loop:
 					cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}
 				}
 			}
+		case <-time.After(5 * time.Minute):
+			cl.in <- &irc.Message{nil, irc.PING, []string{}, "", false}
 		case <-quit:
 			cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
 			break loop

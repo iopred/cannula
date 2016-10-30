@@ -40,6 +40,7 @@ func NewClient(prefix *irc.Prefix, conn net.Conn, out chan interface{}) *Client 
 }
 
 func (cl *Client) handle() {
+	quit := make(chan bool)
 	go func() {
 		for {
 			cl.netconn.SetReadDeadline(time.Now().Add(10 * time.Minute))
@@ -57,7 +58,7 @@ func (cl *Client) handle() {
 			m.Prefix = cl.Prefix
 			cl.out <- m
 		}
-		cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
+		close(quit)
 	}()
 
 	for {
@@ -75,6 +76,9 @@ func (cl *Client) handle() {
 					cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Write error.", false}
 				}
 			}
+		case <-quit:
+			cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
+			break
 		}
 	}
 

@@ -61,13 +61,13 @@ func (cl *Client) handle() {
 		close(quit)
 	}()
 
+loop:
 	for {
 		select {
 		case i := <-cl.in:
 			switch i := i.(type) {
 			case *ServerClose:
-				break
-				return
+				break loop
 			case *irc.Message:
 				fmt.Println(cl.Prefix, ">", i)
 				cl.netconn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
@@ -78,7 +78,7 @@ func (cl *Client) handle() {
 			}
 		case <-quit:
 			cl.out <- &irc.Message{cl.Prefix, "QUIT", []string{}, "Read error.", false}
-			break
+			break loop
 		}
 	}
 

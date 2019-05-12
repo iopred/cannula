@@ -214,7 +214,7 @@ func (c *Cannula) ytEventStream(videoID string) (string, *youtube.VideoSnippet, 
 
 	v := r.Items[0]
 
-	if v.LiveStreamingDetails.ActiveLiveChatId == "" {
+	if v.LiveStreamingDetails == nil || v.LiveStreamingDetails.ActiveLiveChatId == "" {
 		return "", v.Snippet, nil, nil
 	}
 

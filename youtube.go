@@ -164,7 +164,7 @@ func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}, qui
 		default:
 
 		}
-		list := c.service.LiveChatMessages.List(liveChatId, "id,snippet,authorDetails").MaxResults(200)
+		list := c.service.LiveChatMessages.List(liveChatId, []string{"id","snippet","authorDetails"}).MaxResults(200)
 		if pageToken != "" {
 			list.PageToken(pageToken)
 		}
@@ -203,7 +203,7 @@ func (c *Cannula) ytPollMessages(liveChatId string, events chan interface{}, qui
 
 func (c *Cannula) ytEventStream(videoID string) (string, *youtube.VideoSnippet, chan interface{}, chan interface{}) {
 
-	r, err := c.service.Videos.List("snippet,liveStreamingDetails").Id(videoID).Do()
+	r, err := c.service.Videos.List([]string{"snippet","liveStreamingDetails"}).Id(videoID).Do()
 	if err != nil {
 		return "", nil, nil, nil
 	}

@@ -224,7 +224,7 @@ func (c *Cannula) checkAuth(cl *Client) {
 	if cl.Service == nil {
 		cl.in <- &irc.Message{c.prefix, irc.NOTICE, []string{cl.Prefix.Name}, fmt.Sprintf("You have not linked your YouTube account properly. Visit: %s and follow the instructions to link your account.", c.ytGenerateAuthURL()), false}
 	} else {
-		res, err := cl.Service.Channels.List("id,snippet").Mine(true).Do()
+		res, err := cl.Service.Channels.List([]string{"id","snippet"}).Mine(true).Do()
 		if err != nil || len(res.Items) == 0 {
 			if err == nil {
 				err = errors.New("Could not find your YouTube Channel, have you created one?")
@@ -509,7 +509,7 @@ func (c *Cannula) kick(cl *Client, m *irc.Message) {
 		}
 
 		c.rateLimit <- func() {
-			_, err := cl.Service.LiveChatBans.Insert("snippet", &youtube.LiveChatBan{
+			_, err := cl.Service.LiveChatBans.Insert([]string{"snippet"}, &youtube.LiveChatBan{
 				Snippet: &youtube.LiveChatBanSnippet{
 					LiveChatId: ch.liveChatId,
 					BannedUserDetails: &youtube.ChannelProfileDetails{
@@ -612,7 +612,7 @@ func (c *Cannula) mode(cl *Client, m *irc.Message) {
 		}
 
 		c.rateLimit <- func() {
-			_, err := cl.Service.LiveChatBans.Insert("snippet", &youtube.LiveChatBan{
+			_, err := cl.Service.LiveChatBans.Insert([]string{"snippet"}, &youtube.LiveChatBan{
 				Snippet: &youtube.LiveChatBanSnippet{
 					LiveChatId: ch.liveChatId,
 					BannedUserDetails: &youtube.ChannelProfileDetails{
@@ -669,7 +669,7 @@ func (c *Cannula) broadcast(m *irc.Message, ignore *irc.Prefix) {
 				me := message[i:m]
 
 				c.rateLimit <- func() {
-					res, err := cl.Service.LiveChatMessages.Insert("snippet", &youtube.LiveChatMessage{
+					res, err := cl.Service.LiveChatMessages.Insert([]string{"snippet"}, &youtube.LiveChatMessage{
 						Snippet: &youtube.LiveChatMessageSnippet{
 							LiveChatId: ch.liveChatId,
 							Type:       "textMessageEvent",
